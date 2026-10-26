@@ -10,7 +10,7 @@ Estados: PENDIENTE · EN_CURSO · HECHA · BLOQUEADA
 
 | ID | Historia | Depende de | Estado | PRs |
 |----|----------|------------|--------|-----|
-| BASE-001 | Verificar baseline: build, typecheck y pruebas de HAIP en verde en develop; documentar en `02-current-haip-baseline.md` versiones reales del lockfile y módulos a deshabilitar (channel manager, booking engine, agentes de revenue) | — | EN_CURSO | |
+| BASE-001 | Verificar baseline: build, typecheck y pruebas de HAIP en verde en develop; documentar en `02-current-haip-baseline.md` versiones reales del lockfile y módulos a deshabilitar (channel manager, booking engine, agentes de revenue) | — | HECHA | #1, #2, #3 (S4 no abierta: F1/F2 de portabilidad Windows escalados a Danilo, ver §3.1 del baseline) |
 | BASE-002 | Configurar CI propio en GitHub Actions para PRs a develop (build, typecheck, lint, test) reutilizando `.github/workflows` de HAIP | BASE-001 | PENDIENTE | |
 | ORG-001 | Modelo de unidades: crear seed con 3 propiedades (Justin Hotel, Justin Motel, Jurassic Hotel) agrupadas por sede física, COP y America/Bogota | BASE-001 | PENDIENTE | |
 | RBAC-001 | Roles propios: Propietaria, Admin general, Gerente por sede, Supervisor, Recepcionista, Caja, Housekeeping, Inventario, Contabilidad, Auditor; matriz de permisos | ORG-001 | PENDIENTE | |
