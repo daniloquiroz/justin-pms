@@ -42,7 +42,7 @@ Observaciones del entorno:
 - Cada comando `pnpm` imprime `[WARN] The "pnpm" field in package.json is no longer read by pnpm.
   The following keys were ignored: "pnpm.overrides"`. Es solo una advertencia (los comandos
   terminan en 0), pero indica que el bloque `pnpm.overrides` del `package.json` raíz no lo lee
-  la herramienta instalada. Queda para revisión en S2 (versiones del lockfile).
+  la herramienta instalada. Investigado en S2: ver sección 6.6.
 - Docker Desktop estaba apagado al inicio; se arrancó para esta verificación. Al arrancar,
   Docker Desktop reinició contenedores de otro proyecto ajeno a este repositorio,
   uno de los cuales ocupa `127.0.0.1:5432`. Ver F3 (sección 3.1) y 5.3.
@@ -299,7 +299,208 @@ entorno en Windows. Resumen de lo pendiente (la decisión es del orquestador y d
 
 ## 6. Versiones reales del lockfile
 
-Pendiente — S2.
+Extraído el 2026-10-25 de `pnpm-lock.yaml` en la rama `feat/BASE-001-lockfile-versions`
+(lockfile idéntico al de `develop` `615f858`). Ninguna versión proviene del README.
+
+### 6.1 Identidad del lockfile y toolchain declarado
+
+| Dato | Valor | Fuente |
+|------|-------|--------|
+| `lockfileVersion` | `'9.0'` | `pnpm-lock.yaml`, primera línea |
+| `settings` | `autoInstallPeers: true`, `excludeLinksFromLockfile: false` | `pnpm-lock.yaml`, cabecera |
+| `overrides` registrados en el lockfile | `'@types/node': ^22.0.0` | `pnpm-lock.yaml`, cabecera |
+| `packageManager` | `pnpm@9.15.4` | `package.json` raíz |
+| `engines` | `node >=20.0.0`, `pnpm >=9.0.0` | `package.json` raíz |
+| Node en CI | 22 | `.github/workflows/ci.yml` y otros (`node-version: 22`) |
+| Node en imágenes Docker | 20 (`node:20-alpine`) | Dockerfiles (ver 6.3) |
+| Workspaces | `apps/*`, `packages/*` | `pnpm-workspace.yaml` (solo `packages:`; sin `overrides`) |
+| Importers del lockfile | `.`, `apps/api`, `apps/booking`, `apps/dashboard`, `packages/booking-requests`, `packages/database`, `packages/shared` | `pnpm-lock.yaml`, sección `importers` |
+
+Solo `booking-requests`, `database` y `shared` declaran `@types/node` (`^22.0.0`). Ningún
+`package.json` de workspace declara `engines`.
+
+### 6.2 Versiones resueltas por workspace
+
+Formato: `rango declarado` → **versión resuelta**. Fuente: sección `importers` de
+`pnpm-lock.yaml` (los rangos coinciden con cada `package.json`). `-` = el workspace no declara
+la dependencia. Se omiten números de línea porque cambian con cualquier regeneración; el
+método de 6.5 permite repetir la extracción.
+
+| Paquete | api | booking-requests | database | shared | dashboard | booking |
+|---------|-----|------------------|----------|--------|-----------|---------|
+| `typescript` | ^5.7.0 → **5.9.3** | ^5.7.0 → **5.9.3** | ^5.7.0 → **5.9.3** | ^5.7.0 → **5.9.3** | ^5.7.0 → **5.9.3** | ^5.7.0 → **5.9.3** |
+| `@nestjs/core` | ^10.4.0 → **10.4.22** | ^10.4.0 → **10.4.22** | - | - | - | - |
+| `@nestjs/common` | ^10.4.0 → **10.4.22** | ^10.4.0 → **10.4.22** | - | ^10.4.0 → **10.4.22** | - | - |
+| `@nestjs/swagger` | ^7.4.0 → **7.4.2** | ^7.4.0 → **7.4.2** | - | - | - | - |
+| `@nestjs/event-emitter` | ^3.0.1 → **3.0.1** | - | - | - | - | - |
+| `@nestjs/websockets` | ^10.0.0 → **10.4.22** | - | - | - | - | - |
+| `socket.io` | ^4.8.3 → **4.8.3** | - | - | - | - | - |
+| `drizzle-orm` | ^0.39.0 → **0.39.3** | ^0.39.0 → **0.39.3** | ^0.39.0 → **0.39.3** | - | - | - |
+| `drizzle-kit` | - | - | ^0.30.0 → **0.30.6** | - | - | - |
+| `postgres` | ^3.4.5 → **3.4.9** | ^3.4.5 → **3.4.9** | ^3.4.5 → **3.4.9** | - | - | - |
+| `bullmq` | ^5.81.1 → **5.81.1** | - | - | - | - | - |
+| `class-validator` | ^0.14.1 → **0.14.4** | ^0.14.1 → **0.14.4** | - | ^0.14.1 → **0.14.4** | - | - |
+| `class-transformer` | ^0.5.1 → **0.5.1** | ^0.5.1 → **0.5.1** | - | - | - | - |
+| `decimal.js` | ^10.4.3 → **10.6.0** | ^10.4.3 → **10.6.0** | - | ^10.4.3 → **10.6.0** | - | - |
+| `stripe` | ^22.0.0 → **22.0.0** | ^22.0.0 → **22.0.0** | - | ^22.0.0 → **22.0.0** | - | - |
+| `jsonwebtoken` | ^9.0.3 → **9.0.3** | - | - | - | - | - |
+| `jwks-rsa` | ^4.0.1 → **4.0.1** | - | - | - | - | - |
+| `passport` | ^0.7.0 → **0.7.0** | - | - | - | - | - |
+| `vitest` | ^2.1.0 → **2.1.9** | ^2.1.0 → **2.1.9** | ^2.1.0 → **2.1.9** | ^2.1.0 → **2.1.9** | ^2.1.0 → **2.1.9** | ^2.1.0 → **2.1.9** |
+| `@swc/core` | ^1.9.0 → **1.15.24** | ^1.9.0 → **1.15.24** | - | - | - | - |
+| `tsup` | - | ^8.3.0 → **8.5.1** | ^8.3.0 → **8.5.1** | ^8.3.0 → **8.5.1** | - | - |
+| `eslint` | ^9.0.0 → **9.39.4** | ^9.0.0 → **9.39.4** | ^9.0.0 → **9.39.4** | ^9.0.0 → **9.39.4** | - | - |
+| `react` | - | - | - | - | ^18.3.1 → **18.3.1** | ^18.3.1 → **18.3.1** |
+| `react-dom` | - | - | - | - | ^18.3.1 → **18.3.1** | ^18.3.1 → **18.3.1** |
+| `react-router-dom` | - | - | - | - | ^6.28.0 → **6.30.3** | ^6.28.0 → **6.30.3** |
+| `@tanstack/react-query` | - | - | - | - | ^5.60.0 → **5.96.2** | ^5.60.0 → **5.96.2** |
+| `vite` | - | - | - | - | ^6.0.0 → **6.4.2** | ^6.0.0 → **6.4.2** |
+| `tailwindcss` | - | - | - | - | ^3.4.15 → **3.4.19** | ^3.4.15 → **3.4.19** |
+| `keycloak-js` | - | - | - | - | ^26.2.3 → **26.2.3** | - |
+| `socket.io-client` | - | - | - | - | ^4.8.0 → **4.8.3** | - |
+| `i18next` | - | - | - | - | ^23.16.0 → **23.16.8** | - |
+| `zod` | - | - | - | - | ^3.23.0 → **3.25.76** | - |
+
+Notas:
+
+- `eslint` ^9.0.0 → **9.39.4** también está en el importer raíz (`.`), junto con `@eslint/js`
+  ^10.0.1 y `typescript-eslint` ^8.58.0. `dashboard` y `booking` no declaran `eslint` propio.
+- `vitest` es 2.1.9 en todos los workspaces. La API se compila con `@nestjs/cli` y SWC.
+- Otras dependencias relevantes (misma fuente):
+
+| Paquete | Workspace | Rango → resuelta |
+|---------|-----------|------------------|
+| `@nestjs/platform-express` | api (dep) | ^10.4.0 → 10.4.22 |
+| `@nestjs/platform-socket.io` | api (dep) | ^10.0.0 → 10.4.22 |
+| `@nestjs/config` | api (dep), booking-requests (dev) | ^3.3.0 → 3.3.0 |
+| `@nestjs/passport` | api (dep) | ^11.0.5 → 11.0.5 |
+| `@nestjs/cli` | api (dev) | ^10.4.0 → 10.4.9 |
+| `@swc/cli` | api (dev) | ^0.5.0 → 0.5.2 |
+| `fast-xml-parser` | api (dep) | ^5.5.10 → 5.5.10 (el lockfile también contiene 5.7.3, transitivo) |
+| `tsx` | database, booking-requests (dev) | ^4.19.0 → 4.21.0 |
+| `@vitejs/plugin-react` | dashboard, booking (dev) | ^4.3.0 → 4.7.0 |
+| `@types/react`, `@types/react-dom` | dashboard, booking (dev) | ^18.3.12 → 18.3.28; ^18.3.1 → 18.3.7 |
+| `jsdom` | dashboard, booking (dev) | ^25.0.0 → 25.0.1 |
+| `recharts`, `lucide-react`, `react-i18next` | dashboard | ^2.13.0 → 2.15.4; ^0.460.0 → 0.460.0; ^15.1.0 → 15.7.4 |
+
+- **Cliente de Redis:** ningún workspace declara `ioredis`, `redis` ni `pg`. Redis lo usa
+  `bullmq` mediante `ioredis` **transitivo, resuelto a 5.11.1** (paquete `ioredis@5.11.1` en el
+  lockfile). El driver de PostgreSQL es `postgres` (postgres.js) 3.4.9, no `pg`.
+- **`socket.io` (dos entradas en el lockfile):**
+  - `socket.io` ^4.8.3 → 4.8.3 es dependencia directa de `api` (sección `dependencies` del importer).
+  - `@nestjs/platform-socket.io@10.4.22` declara su propia dependencia normal `socket.io: 4.8.1`
+    (entrada `socket.io@4.8.1`, distinta de `socket.io@4.8.3`); conviven dos versiones.
+  - El código de `api` (`apps/api/src/modules/events/events.gateway.ts`, línea 12) importa tipos
+    de `socket.io` que resuelven a 4.8.3; el servidor lo instancia el adaptador
+    `@nestjs/platform-socket.io`, que resuelve su propia `socket.io@4.8.1`. Qué versión atiende
+    las conexiones en ejecución **no se verificó**.
+- **Servidores:** las versiones de PostgreSQL y Redis no las fija el lockfile sino las imágenes
+  Docker (6.3).
+
+### 6.3 Imágenes Docker
+
+Fuente: `docker-compose.yml`, `docker-compose.prod.yml`, `docker-compose.auth.yml`,
+`.github/workflows/ci.yml`, `.github/workflows/release.yml` y los Dockerfiles. Ninguna imagen se fija por digest.
+
+| Imagen | Tag | Dónde se usa | Perfil | Observaciones |
+|--------|-----|--------------|--------|---------------|
+| `postgres` | `16-alpine` | `docker-compose.yml` (servicio `postgres`); servicios de dos jobs de `ci.yml` y de dos jobs de `release.yml` | por defecto | Tag flotante dentro de 16.x. |
+| `redis` | `7-alpine` | `docker-compose.yml` (servicio `redis`); servicios de dos jobs de `ci.yml` y de dos jobs de `release.yml` | por defecto | Tag flotante dentro de 7.x. |
+| `quay.io/keycloak/keycloak` | `24.0` | `docker-compose.yml` (servicio `keycloak`) | `auth` | Tag de minor, flotante en parches. |
+| `minio/minio` | `latest` | `docker-compose.yml` (servicio `minio`) | `storage` | **Riesgo de reproducibilidad:** `latest` cambia sin aviso y puede traer cambios incompatibles. Solo se levanta con el perfil `storage`. |
+| `node` | `20-alpine` | `apps/api/Dockerfile` (etapas `base` y `production`); `tools/haip-connect-gpt/Dockerfile` (`build` y `runtime`); `tools/mock-bookingcom`, `tools/mock-derbysoft`, `tools/mock-siteminder` | - | Node 20 en imágenes, frente a Node 22 en CI y Node 24.16.0 en la verificación local de S1. |
+| `haip-api` (construida) | local | `docker-compose.yml` (servicios `init` y `api`); `docker-compose.prod.yml` y `docker-compose.auth.yml` construyen con `apps/api/Dockerfile` | - | En los compose se construye localmente (`image: haip-api` + `build`). El flujo de release del upstream (`.github/workflows/release.yml`, job `publish-image`) además la publica en GHCR con tag de versión y `latest`; ningún compose del repo consume esa imagen publicada. |
+
+Los servicios `mock-bookingcom`, `mock-siteminder` y `mock-derbysoft` (perfil `channels`) se
+construyen desde `tools/*/Dockerfile`.
+
+Observaciones de reproducibilidad en Dockerfiles (solo documentadas, no corregidas):
+
+- `apps/api/Dockerfile` activa `pnpm@9.15.4` con `corepack prepare` (coincide con `packageManager`).
+- El mismo Dockerfile ejecuta `pnpm install --frozen-lockfile || pnpm install`: si el lockfile
+  no coincide, la imagen cae a una instalación sin congelar y las versiones resueltas pueden
+  diferir de las de este documento.
+
+### 6.4 Discrepancias README vs manifiestos y lockfile
+
+Fuente del README: tabla de tecnologías de `README.md`. Los valores reales salen de 6.2.
+
+| Tema | README dice | Manifiesto / lockfile dice | Efecto |
+|------|-------------|----------------------------|--------|
+| React | "React 19 + Vite" | `react` y `react-dom` `^18.3.1` → 18.3.1; `@types/react` 18.3.28 en `dashboard` y `booking` | Es React 18. Ningún workspace usa React 19. |
+| Tailwind CSS | "Tailwind CSS 4" | `tailwindcss` `^3.4.15` → 3.4.19, con `postcss`, `autoprefixer` y `tailwind.config.ts` en `dashboard` y `booking` | Es Tailwind 3. La configuración de v4 no aplica. |
+| Enrutado del frontend | "TanStack Query + TanStack Router (file-based routing)" | `react-router-dom` `^6.28.0` → 6.30.3; no hay `@tanstack/react-router` en ningún manifiesto ni en el lockfile; `@tanstack/react-query` sí (5.96.2) | El enrutado es React Router 6, no TanStack Router. |
+| Node.js | "Node.js ≥ 20" | `engines.node >=20.0.0`; CI en Node 22; imágenes en `node:20-alpine`; S1 verificó con Node 24.16.0 | Coherente con el mínimo, pero hay tres versiones de Node en uso (20 / 22 / 24). |
+| Redis | "Redis 7 + BullMQ" | `redis:7-alpine`; `bullmq` 5.81.1; `ioredis` 5.11.1 solo transitivo | Coherente. |
+| PostgreSQL | "PostgreSQL 16" | `postgres:16-alpine`; driver `postgres` 3.4.9 | Coherente. |
+| NestJS | Sin versión | `@nestjs/core` y `@nestjs/common` 10.4.22; `@nestjs/swagger` 7.4.2 | Versión mayor 10. |
+| pnpm | "pnpm ≥ 9" | `packageManager: pnpm@9.15.4`; `engines.pnpm >=9.0.0` | Coherente. Ver 6.6 sobre el pnpm global 11.x observado. |
+| Pruebas | "2602 passing tests across 303 files with passing tests" | Verificado en S1: 2602 / 303 con Postgres + Redis | Coincide (sección 4). |
+| Build | "tsup (packages) + Vite (dashboard) + nest build (API)" | `tsup` 8.5.1 en `booking-requests`, `database`, `shared`; `vite` 6.4.2 en `dashboard` y `booking`; `@nestjs/cli` 10.4.9 | Coherente; `apps/booking` también usa Vite. |
+| Tipos de Node | Sin mención | `@types/node` único en el lockfile: 22.19.17 | Los tipos son de Node 22 aunque el runtime sea 20 (Docker) o 24 (local S1). |
+
+### 6.5 Método de extracción reproducible
+
+Sin regenerar el lockfile y sin ejecutar `pnpm install` sin `--frozen-lockfile`:
+
+1. Lectura directa: la sección `importers:` de `pnpm-lock.yaml` lista, por workspace, cada
+   dependencia con `specifier` (rango declarado) y `version` (resuelta; el sufijo entre
+   paréntesis son peers y no forma parte de la versión).
+2. Comandos de solo lectura desde la raíz:
+
+```bash
+pnpm list -r --depth 0 --json            # versiones resueltas por workspace
+pnpm why <paquete> -r                    # quién trae el paquete y en qué versión
+grep -n "^  '\?<paquete>@" pnpm-lock.yaml   # entradas de un paquete (con o sin scope; los scoped van entre comillas)
+```
+
+3. La tabla 6.2 se generó con un script de solo lectura que recorre `importers:` y toma
+   `specifier` y `version`; no escribe en el repositorio.
+4. Consistencia: `pnpm install --frozen-lockfile` terminó en 0 y dejó el lockfile sin cambios
+   (S1, comando 1).
+
+### 6.6 Advertencia `pnpm.overrides` "no longer read by pnpm"
+
+**Observación (S1).** Cada comando `pnpm` ejecutado en el repositorio imprime:
+
+```text
+[WARN] The "pnpm" field in package.json is no longer read by pnpm. The following keys were
+ignored: "pnpm.overrides". See https://pnpm.io/settings for the new home of each setting.
+```
+
+**Causa investigada.**
+
+| Hecho | Evidencia |
+|-------|-----------|
+| El `package.json` raíz declara `"pnpm": { "overrides": { "@types/node": "^22.0.0" } }` y `packageManager: pnpm@9.15.4`. | `package.json` raíz |
+| `pnpm-workspace.yaml` solo contiene `packages:`; no tiene `overrides` ni otra configuración. No existe `.npmrc` en la raíz. | `pnpm-workspace.yaml` |
+| Fuera del repositorio, `pnpm --version` imprime **11.5.1** (instalación global de pnpm del usuario). Dentro del repositorio imprime `9.15.4`, precedido de la advertencia. | `pnpm --version` ejecutado en ambos sitios |
+| `node_modules/.modules.yaml` registra `packageManager: pnpm@9.15.4`. | `node_modules/.modules.yaml` |
+
+Causa: el pnpm global es 11.x. Al ejecutarse en el repositorio, lee el `package.json`, emite la
+advertencia (en pnpm 11 los ajustes del campo `pnpm` pasaron a `pnpm-workspace.yaml`) y delega en
+la versión fijada por `packageManager` (9.15.4), que es la que ejecuta el comando. La advertencia
+procede del lanzador 11.x, no de pnpm 9.15.4. El mecanismo de delegación se infiere de lo
+observado (versión efectiva 9.15.4 y `.modules.yaml`); no se inspeccionó el código del lanzador.
+
+**Efecto real sobre el lockfile actual.** Los overrides **sí se aplican** con el flujo actual:
+
+- El lockfile contiene `overrides: '@types/node': ^22.0.0`; la instalación que lo generó leyó
+  el bloque.
+- `pnpm install --frozen-lockfile` termina en 0 con este `package.json` (S1, comando 1). Una
+  instalación congelada falla si los `overrides` del lockfile no coinciden con la configuración
+  leída; no falla.
+- El lockfile contiene una única versión de `@types/node`: **22.19.17**.
+- El efecto práctico es pequeño hoy: los tres workspaces que declaran `@types/node` ya piden
+  `^22.0.0`, por lo que el resultado probablemente sería el mismo sin override. Es una
+  inferencia; no se comprobó regenerando un lockfile sin override (prohibido en S2).
+
+**Riesgo residual (no verificado, no corregido).** Si alguien ejecuta pnpm 11.x sin que se
+delegue en 9.15.4, el bloque `pnpm.overrides` se ignoraría y no coincidiría con el lockfile.
+La corrección posible (mover el override a `pnpm-workspace.yaml`, o exigir pnpm 9.15.4 vía
+`corepack`) queda fuera de S2 y es decisión del orquestador o de Danilo. El CI usa
+`pnpm/action-setup@v4` y el Dockerfile de la API usa `corepack prepare pnpm@9.15.4`, ambos con la
+versión de `packageManager`.
 
 ## 7. Inventario de módulos y módulos a deshabilitar
 
