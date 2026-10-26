@@ -504,4 +504,421 @@ versión de `packageManager`.
 
 ## 7. Inventario de módulos y módulos a deshabilitar
 
-Pendiente — S3.
+Verificado el 2026-10-25 sobre la rama `feat/BASE-001-module-inventory` (desde `develop`
+`d8b7bd1`; el código de `apps/` y `packages/` es el mismo de `vendor/haip-v3.1.1` más el commit
+documental de S1). Solo lectura de código: **no se modificó ni se aplicó nada**. Todas las rutas
+son relativas a la raíz del repositorio; las rutas HTTP llevan el prefijo global `api/v1`
+(`apps/api/src/main.ts:49`). `archivo:línea` indica dónde se verificó cada afirmación; lo que no
+se pudo comprobar está marcado **no verificado**.
+
+Método reproducible: contar los identificadores `*Module` del arreglo `imports` de
+`apps/api/src/app.module.ts` (líneas 59-119); listar `find apps/api/src/modules -name "*.module.ts"`;
+buscar importadores con `grep -rn "<nombre>.module" apps/api/src`; buscar listeners con
+`grep -rn "@OnEvent" apps/api/src`; buscar planificación interna con
+`grep -rnE "@Cron|@Interval|setInterval|new Queue|new Worker" apps/api/src`.
+
+### 7.1 Conteo real y composición de `AppModule`
+
+| Concepto | Cantidad | Evidencia |
+|----------|----------|-----------|
+| Módulos de dominio importados estáticamente | **48** | `apps/api/src/app.module.ts:70-118` (49 líneas; la línea 79 es el spread `...bookingRequestsModules()`, no un módulo) |
+| Infraestructura | 3 (`ConfigModule` global, `EventEmitterModule` con `wildcard: true`, `DatabaseModule`) | `app.module.ts:60-69`; `DatabaseModule` es `@Global()` en `apps/api/src/database/database.module.ts:34` |
+| Condicional: `BookingRequestModule.forRoot(...)` de `@telivityhaip/booking-requests` | 0 o 1 | solo si `HAIP_BOOKING_REQUESTS === 'true'`: `apps/api/src/booking-requests.bootstrap.ts:100,110`; precarga en `apps/api/src/main.ts:23` |
+| Condicional: `ServeStaticModule` del dashboard | 0 o 1 | `NODE_ENV=production` o `SERVE_DASHBOARD=true`: `app.module.ts:124-134` |
+| Condicional: `ServeStaticModule` del widget `/booking` | 0 o 1 | `NODE_ENV=production` o `SERVE_BOOKING=true`: `app.module.ts:136-145` |
+| Archivos `*.module.ts` bajo `apps/api/src/modules` | 50 | 48 de la raíz + 2 que **no** están en la raíz (7.3) |
+
+El conteo de 48 del plan **coincide** con el código. `apps/api/src/modules/booking-request/` **no
+es un módulo Nest**: solo contiene pruebas (`*.spec.ts`, `*.e2e-spec.ts`) y el ayudante
+`regression-database-utils.ts`; el módulo real vive en `packages/booking-requests`.
+
+### 7.2 Inventario de los 48 módulos de `AppModule`
+
+Columna `L`: línea en `app.module.ts`. Columna `Clasificación`: `reutilizar (fila: acción)` cuando el módulo
+corresponde claramente a una fila de la tabla "Qué ya trae y qué aprovecharía" de la propuesta
+(`docs/project/referencia/propuesta-pms.pdf`, página 4); `deshabilitar (BASE-001)` para los tres que nombra la
+historia; `pendiente Q-012` para todo lo demás (regla del plan: lo que no está en esa tabla ni en la historia no se
+decide aquí). No se adivinaron correspondencias dudosas: p. ej. `AuthModule` (guards) y `WebhookModule` no tienen
+fila propia en la tabla y quedan en `pendiente Q-012`; la fila "Auditoría" no se asignó a ningún módulo. Los
+candidatos de Q-012 (a) se listan en la propia Q-012. El propósito se toma de los controladores, servicios y
+comentarios (entre paréntesis lo inferido del nombre o de la ruta). Resumen: 13 `reutilizar`, 3 `deshabilitar`,
+32 `pendiente Q-012` (total 48).
+
+| # | Módulo | Ruta (`apps/api/src/modules/`) | L | Rutas HTTP (controlador) | Propósito | Clasificación |
+|---|--------|--------------------------------|---|--------------------------|-----------|-------|
+| 1 | `HealthModule` | `health/` | 70 | `health` | Comprobación de salud del servicio | pendiente Q-012 |
+| 2 | `PropertyModule` | `property/` | 71 | `properties`, `organizations` | Propiedades y organizaciones (el tenant) | reutilizar (Multi-hotel: Reutilizar) |
+| 3 | `RoomModule` | `room/` | 72 | `rooms` | Habitaciones, tipos de habitación, estado y discrepancias | reutilizar (Estados habitaciones: Personalizar UX) |
+| 4 | `GuestModule` | `guest/` | 73 | `guests` | Perfiles de huésped | pendiente Q-012 |
+| 5 | `MediaModule` | `media/` | 74 | `media` | Imágenes de propiedad, tipo de habitación y habitación; almacenamiento | pendiente Q-012 |
+| 6 | `ReservationModule` | `reservation/` | 75 | `reservations` | Reservas, disponibilidad y mensajería de reserva | reutilizar (Reservas por noche y Walk-in/check-in/check-out: Reutilizar) |
+| 7 | `FolioModule` | `folio/` | 76 | `folios` | Folios, cargos, ruteo y documentos fiscales | reutilizar (Cargos/folios: Reutilizar) |
+| 8 | `RatePlanModule` | `rate-plan/` | 77 | `rate-plans` | Planes de tarifa y restricciones | pendiente Q-012 |
+| 9 | `PaymentModule` | `payment/` | 78 | `payments`, `webhooks/stripe`, `webhooks/redsys`, `webhooks/worldline` | Pagos y receptores de webhooks de pasarelas (rutas de los controladores `payment/*-webhook.controller.ts`) | pendiente Q-012 |
+| 10 | `HousekeepingModule` | `housekeeping/` | 80 | `housekeeping` | Gobernanza de habitaciones | reutilizar (Housekeeping: Reutilizar/ampliar) |
+| 11 | `LostAndFoundModule` | `lost-and-found/` | 81 | `lost-and-found` | Objetos perdidos | pendiente Q-012 |
+| 12 | `ServiceRequestsModule` | `service-requests/` | 82 | `service-requests` | Solicitudes de servicio | pendiente Q-012 |
+| 13 | `NightAuditModule` | `night-audit/` | 83 | `night-audit` | Auditoría nocturna | pendiente Q-012 |
+| 14 | `ReportsModule` | `reports/` | 84 | `reports` | Reportes (ingresos, ocupación, etc.) | pendiente Q-012 |
+| 15 | `WebhookModule` | `webhook/` | 85 | (sin controlador) | Emisión y entrega de eventos `entidad.acción`; cola BullMQ de entrega (`webhook-delivery.service.ts:397`) | pendiente Q-012 |
+| 16 | `ChannelModule` | `channel/` | 86 | `channels`, `channels/inbound/*` | Channel manager (7.4) | deshabilitar (BASE-001) |
+| 17 | `ConnectModule` | `connect/` | 87 | `connect`, `admin/connect/credentials` | API para agentes externos con API key (`connect.controller.ts:25-35`) | pendiente Q-012 |
+| 18 | `EventsModule` | `events/` | 88 | (sin controlador) | Gateway websocket y feed de eventos del dashboard | reutilizar (Tiempo real, Socket.IO: Reutilizar) |
+| 19 | `TaxModule` | `tax/` | 89 | `tax` | Perfiles y reglas de impuestos | pendiente Q-012 |
+| 20 | `AuthModule` | `auth/` | 90 | (sin controlador) | Guards, permisos, API keys; exporta `PermissionsService` (`auth.module.ts:71`) | pendiente Q-012 |
+| 21 | `AgentModule` | `agent/` | 91 | `agents` | Agentes de IA (7.6) | deshabilitar (BASE-001): solo los agentes de revenue; la frontera es Q-012 (b) |
+| 22 | `AccountingModule` | `accounting/` | 92 | (controlador sin prefijo) | Depósitos, cuentas por cobrar, códigos contables | pendiente Q-012 |
+| 23 | `CashierModule` | `cashier/` | 93 | `cash`, `cashier` | Cajones de caja | reutilizar (Caja/cash drawer: Reutilizar) |
+| 24 | `HouseAccountModule` | `house-account/` | 94 | (controlador sin prefijo) | Cuentas de la casa y catálogo de productos retail | pendiente Q-012 |
+| 25 | `AncillaryModule` | `ancillary/` | 95 | `ancillary` | Servicios vendibles de la estadía | pendiente Q-012 |
+| 26 | `PolicyModule` | `policy/` | 96 | `cancellation-policies` | Políticas de cancelación | pendiente Q-012 |
+| 27 | `GroupsModule` | `groups/` | 97 | `groups` | Grupos, bloqueos y rooming list | pendiente Q-012 |
+| 28 | `AdminModule` | `admin/` | 98 | `admin` | Usuarios, roles y catálogo de permisos | reutilizar (Roles/permisos: Extender granularidad) |
+| 29 | `BookingEngineModule` | `booking-engine/` | 99 | `booking-engine`, `admin/booking-engine`, `booking-return` | Reserva directa (7.5) | deshabilitar (BASE-001) |
+| 30 | `ImportModule` | `import/` | 100 | `import` | Importación por entidad con `dryRun` | reutilizar (Importación: Extender) |
+| 31 | `MigrationModule` | `migration/` | 101 | `migration` | Trabajos de migración asíncronos y reanudables (cola BullMQ, `migration-step-processor.service.ts:326`) | pendiente Q-012 |
+| 32 | `AccountingExportModule` | `accounting-export/` | 102 | `accounting-export` | CSV de diario de ingresos y balance de comprobación | reutilizar (Exportación contable: Adaptar Colombia) |
+| 33 | `NotificationsModule` | `notifications/` | 103 | `notifications` | Envío de SMS, WhatsApp y Telegram | pendiente Q-012 |
+| 34 | `ReviewsModule` | `reviews/` | 104 | `reviews` | Reseñas; `ReviewsIngestService` emite `guest.review.ingested` (`reviews-ingest.service.ts:111-112`) | pendiente Q-012 |
+| 35 | `PosModule` | `pos/` | 105 | `pos` | Cargos de puntos de venta al folio | pendiente Q-012 |
+| 36 | `FolioInboundModule` | `folio-inbound/` | 106 | `folio-inbound` | Cargos incidentales externos al folio de un huésped alojado | reutilizar (Minibar como cargo: Extender a inventario físico) |
+| 37 | `DoorLockModule` | `door-lock/` | 107 | `door-lock` | Credenciales de cerradura por reserva | reutilizar (Cerraduras: Crear proveedor real) |
+| 38 | `GuestCheckInModule` | `guest-check-in/` | 108 | `guest-check-in` | Check-in en línea del huésped por enlace | pendiente Q-012 |
+| 39 | `LlmModule` | `llm/` | 109 | (sin controlador) | `LlmService`, opt-in por `HAIP_AI_ENABLED` (`llm.service.ts:43`) | pendiente Q-012 |
+| 40 | `SearchModule` | `search/` | 110 | `search` | Búsqueda universal | pendiente Q-012 |
+| 41 | `StaffNotificationsModule` | `staff-notifications/` | 111 | `staff-notifications` | Notificaciones internas al personal y su listener (`staff-notifications.module.ts:11`) | pendiente Q-012 |
+| 42 | `HelpModule` | `help/` | 112 | `help` | Ayuda contextual por ruta del dashboard; explicación con LLM opcional | pendiente Q-012 |
+| 43 | `TurnawaysModule` | `turnaways/` | 113 | (controlador sin prefijo) | Códigos de motivo y registro de reservas denegadas | pendiente Q-012 |
+| 44 | `WaitlistModule` | `waitlist/` | 114 | `waitlist-entries` | Lista de espera sin descontar inventario | pendiente Q-012 |
+| 45 | `LoyaltyModule` | `loyalty/` | 115 | `loyalty` | Programa y cuentas de fidelización por organización | reutilizar (Fidelización: Localizar/reglas propias) |
+| 46 | `IntegrationsModule` | `integrations/` | 116 | `integrations/catalog`, `admin/integrations` | Catálogo de integraciones y estado por propiedad | pendiente Q-012 |
+| 47 | `IcalModule` | `ical/` | 117 | `ical` | Feeds iCal de importación y exportación; módulo independiente de `ChannelModule` (`ical.module.ts:6-8` no importa ningún módulo) | pendiente Q-012 |
+| 48 | `FiscalModule` | `fiscal/` | 118 | `fiscal` | Configuración de proveedor fiscal y de registro de huéspedes por propiedad | pendiente Q-012 |
+
+### 7.3 Piezas fuera del arreglo de `AppModule`
+
+| Pieza | Ruta | Cómo se carga | Propósito |
+|-------|------|---------------|-----------|
+| `MigrationLegacyIdMapModule` | `apps/api/src/modules/migration/migration-legacy-id-map.module.ts` | Importado por `MigrationModule` (`migration.module.ts:12`) y por `ReservationModule` (`reservation.module.ts:33`) | Mapa de ids heredados |
+| `EmailModule` / `EmailService` | `apps/api/src/modules/agent/guest-comms/email.module.ts` | Importado por `AgentModule`, `ReservationModule`, `GuestCheckInModule` y el bootstrap de booking-requests (7.6) | Transporte de correo con proveedores intercambiables (`email.module.ts:11-36`) |
+| `BookingRequestModule.forRoot` | `packages/booking-requests` (cableado en `apps/api/src/booking-requests.bootstrap.ts`) | Solo con `HAIP_BOOKING_REQUESTS=true` | Solicitudes de reserva (modo "request") |
+| `apps/dashboard` | `apps/dashboard/` | Estático vía `ServeStaticModule` (`app.module.ts:124-134`) | Interfaz de gestión |
+| `apps/booking` | `apps/booking/` (`@telivityhaip/booking`) | Estático en `/booking` (`app.module.ts:136-145`) | Widget de reserva directa |
+| `tools/mock-bookingcom`, `tools/mock-siteminder`, `tools/mock-derbysoft` | `tools/*/` | Perfil `channels` de docker-compose (`docker-compose.yml:158-200`) | Simuladores de canal para desarrollo |
+| `tools/haip-connect-gpt`, `tools/repo-control` | `tools/` | **no verificado** (no se inspeccionaron) | - |
+
+### 7.4 Channel manager
+
+**Archivos y módulos Nest.** `apps/api/src/modules/channel/` (`channel.module.ts`, `channel.controller.ts`,
+`channel.service.ts`, `ari.service.ts`, `content-sync.service.ts`, `inbound-reservation.service.ts`,
+`rate-parity.service.ts`, `channel-adapter.factory.ts`) y `channel/adapters/<nombre>/`. Adaptadores
+registrados como providers (`channel.module.ts:50-70`): `mock`, `booking-com`, `siteminder`, `expedia`,
+`derbysoft`, `beds24`, `channex` y los de `wave3-console` (solo rutas de archivo; no se describen
+sus productos).
+
+**Dependencias salientes.** `ChannelModule` importa `ReservationModule`, `WebhookModule`, `MediaModule`
+y `ReviewsModule` (`channel.module.ts:42`). Exporta `ChannelService`, `AriService` e
+`InboundReservationService` (`channel.module.ts:71`).
+
+**Dependencias entrantes.** Verificado con `grep` sobre `apps/api/src`: solo `app.module.ts:24,86`
+importa `ChannelModule`. Otros resultados del `grep` fueron falsos positivos o pruebas:
+`agent/revenue-manager/revenue-manager.agent.ts` coincide por `ChannelMixAgent` (un agente, no el
+módulo; línea 20) y `auth/legacy-role-controllers-migration.spec.ts:13` importa `ChannelController`
+en una prueba. Ningún módulo de producción depende del channel manager.
+
+**Controladores montados siempre (sin flag).** `ChannelController` (`channels`, permiso de clase
+`channels.manage`, `channel.controller.ts:28-29`) y cuatro receptores entrantes marcados `@Public()` con
+autenticación propia por conexión (`channel.module.ts:43-48`):
+
+| Ruta | Archivo | Autenticación |
+|------|---------|---------------|
+| `channels/inbound/booking-com` | `channel/adapters/booking-com/booking-com-inbound.controller.ts:38-39` | Basic Auth contra `config.inboundAuth` de la conexión (líneas 21-35); se omite con `AUTH_ENABLED=false` |
+| `channels/inbound/expedia` | `channel/adapters/expedia/expedia-inbound.controller.ts:26-27` | Firma HMAC por conexión (líneas 18-44) |
+| `channels/inbound/derbysoft` | `channel/adapters/derbysoft/derbysoft-inbound.controller.ts:41-42` | **no verificado** el mecanismo |
+| `channels/inbound/channex` | `channel/adapters/channex/channex-inbound.controller.ts:29-30` | Secreto compartido por cabecera (líneas 20-25) |
+
+`SiteMinder`, `Beds24` y `wave3-console` son adaptadores sin controlador entrante propio.
+
+**Listeners de eventos (se activan solos).**
+
+| Servicio | Eventos | Archivo:línea |
+|----------|---------|---------------|
+| `AriService` | `reservation.created`, `reservation.modified`, `reservation.cancelled` | `channel/ari.service.ts:356,372,393` |
+| `AriService` | `rate_plan.updated`, `rate_restriction.created`, `rate_restriction.updated`, `rate_restriction.deleted` | `channel/ari.service.ts:412-415` |
+| `ContentSyncService` | `property.content_updated`, `roomtype.content_updated` | `channel/content-sync.service.ts:132-133` |
+
+Comportamiento verificado: todos capturan errores y no relanzan (`ari.service.ts:357-368`,
+`content-sync.service.ts:134-141`). Sin conexiones activas **no hay llamada externa**:
+`pushAvailability`/`pushRates`/`pushContent` toman `ChannelService.getActiveConnections`
+(`ari.service.ts:41,129`; `content-sync.service.ts:35-37`), que filtra `status = 'active'` y
+`is_active = true` (`channel.service.ts:85-96`), y el bucle por conexión no se ejecuta. Sí hay
+lecturas de base de datos por evento (la consulta de conexiones; además `pushContent` lee la propiedad
+y sus imágenes antes de iterar, `content-sync.service.ts:39-45`).
+
+**Crons y colas.** Ninguno propio. No hay `@Cron`/`@Interval`/`setInterval` en `apps/api/src`; las únicas
+colas BullMQ son entrega de webhooks, pasos de migración y desafíos de la pasarela
+(`webhook-delivery.service.ts:397`, `migration-step-processor.service.ts:326`,
+`worldline-challenge.queue.ts:107`).
+
+**Flags y variables de entorno.** No existe flag para montar o no el módulo. Variables que usan los
+adaptadores, definidas en `docker-compose.yml:126-143` (`BOOKING_COM_*`, `SITEMINDER_*`, `EXPEDIA_*`,
+`DERBYSOFT_*`); servicios simuladores bajo el perfil `channels` (`docker-compose.yml:158-200`).
+`AUTH_ENABLED=false` relaja la autenticación del receptor Booking.com (arriba).
+
+**Configuración por propiedad.** Tabla `channel_connections` (`packages/database/src/schema/channel.ts:28`):
+`status` con default `pending_setup` (línea 36) e `is_active` con default `true` (línea 60). Para
+sincronizar se necesitan ambos: `status='active'` e `is_active=true`. **Datos demo:** `seed.ts` crea
+tres conexiones: `channelCode` `booking_com` en `active`, `demo_channel` (adaptador `mock`) en `active` y `expedia` en `pending_setup`
+(`packages/database/src/seed.ts:728-777`).
+
+**RBAC y dashboard.** Permiso `channels.manage` (`packages/shared/src/permissions-catalog.ts:59`,
+navegación `/channels`); lo tienen por defecto `admin` (todos), `general_manager` (todos menos
+`admin.*`) y `revenue_manager` (`permissions-catalog.ts:171`). Dashboard: ruta `/channels/*`
+(`apps/dashboard/src/App.tsx:21,64`), entrada de menú (`components/layout/Sidebar.tsx:78`), y el
+submódulo iCal se monta bajo `/channels/ical` (`pages/Channels.tsx:834`, `pages/IcalCalendars.tsx`).
+Los receptores entrantes **no** pasan por RBAC (son `@Public()`). `IcalController` no usa
+`channels.manage`: usa `@Roles('admin'|'revenue_manager')` (`ical/ical.controller.ts:48-119`).
+
+### 7.5 Booking engine (reserva directa)
+
+**Archivos y módulos Nest.** `apps/api/src/modules/booking-engine/` (`booking-engine.module.ts`,
+`booking-engine.controller.ts`, `booking-engine-admin.controller.ts`, `booking-return.controller.ts`,
+`booking-engine.service.ts`, `booking-engine-config.service.ts`, `booking-throttle.guard.ts`) más los
+guards `auth/booking-key.guard.ts` y `auth/booking-engine-scope.guard.ts`. Las dos guards son
+**providers de `BookingEngineModule`**, no de `AuthModule` (`booking-engine.module.ts:37-43`;
+`auth.module.ts:68-71` no los lista). Widget: `apps/booking/`.
+
+**Dependencias salientes.** `BookingEngineModule` importa `ConnectModule`, `ReservationModule`,
+`RatePlanModule`, `TaxModule`, `GuestModule`, `FolioModule`, `PaymentModule`, `AccountingModule`,
+`AuthModule`, `AncillaryModule`, `PolicyModule` (`booking-engine.module.ts:23-34`).
+
+**Dependencias entrantes.** `app.module.ts:37,99` y, de forma dinámica, el bootstrap de
+booking-requests (`booking-requests.bootstrap.ts:17-18,66,81-82,92`), que solo se ejecuta con
+`HAIP_BOOKING_REQUESTS=true`. Exporta `BookingEngineService`, `BookingEngineConfigService`,
+`BookingKeyGuard`, `BookingEngineScopeGuard`, `BookingThrottleGuard` (`booking-engine.module.ts:44-55`).
+
+**Cadena `ConnectModule`.** `ConnectModule` solo la importan `AppModule` y `BookingEngineModule`
+(`connect.module.ts`; `grep` sin otros resultados). Además `PaymentModule` resuelve en tiempo de
+ejecución el token `CONNECT_CHECKOUT_STRIPE_HANDLER` que provee `ConnectModule`
+(`connect.module.ts:42`) en el webhook `checkout.session.completed`
+(`payment/stripe-webhook.controller.ts:147-162`). La resolución usa `moduleRef.get(..., { strict: false })`,
+así que mientras `ConnectModule` se cargue (lo arrastra `BookingEngineModule`) el token se resuelve. Si
+`ConnectModule` deja de cargarse (requiere quitar también `BookingEngineModule` y no activar
+`HAIP_BOOKING_REQUESTS`; el paquete `booking-requests` no importa `ConnectModule`, pero sí
+`BookingEngineModule`, que lo arrastra), el `catch` deja el handler en `undefined` y el webhook ignora
+`checkout.session.completed` sin error ni log. Alcance del impacto: las sesiones de checkout solo las crea
+`ConnectPaymentService` (`connect/connect-payment.service.ts:214,227`), por lo que sin `ConnectModule` no se
+crean sesiones nuevas; el efecto se limita a sesiones creadas antes de retirarlo o a otras integraciones que
+compartan la cuenta de la pasarela. Este acoplamiento no estaba en el plan.
+
+**Controladores montados siempre.** `BookingEngineController` (`booking-engine`, `@Public()` más
+`BookingKeyGuard` y `BookingEngineScopeGuard`, `booking-engine.controller.ts:38-40`),
+`BookingEngineAdminController` (`admin/booking-engine`, permiso `bookingengine.manage`,
+`booking-engine-admin.controller.ts:37-78`) y `BookingReturnController` (`booking-return`, `@Public()`,
+`booking-return.controller.ts:12-13`; no se encontró consulta de `is_enabled` en
+`booking-return.service.ts`).
+
+**Listeners, crons y colas.** Ninguno propio (`grep @OnEvent` en `booking-engine/` sin resultados). El
+`ConnectModule` sí tiene un listener global `@OnEvent('**')` (`connect/connect-events.service.ts:176`)
+que consulta suscripciones a webhooks de agentes por cada evento emitido.
+
+**Flags y variables de entorno.**
+
+| Variable | Efecto verificado | Fuente |
+|----------|-------------------|--------|
+| `HAIP_BOOKING_REQUESTS` | Carga o no el paquete `booking-requests` (que arrastra `BookingEngineModule`, `EmailModule` y otros) | `booking-requests.bootstrap.ts:100,110`; compose `docker-compose.yml:118` (default `false`) |
+| `SERVE_BOOKING` / `NODE_ENV=production` | Sirve el widget en `/booking` | `app.module.ts:136`; **el compose del `api` fija `SERVE_BOOKING: 'true'`** (`docker-compose.yml:105`) |
+| `AUTH_ENABLED` | Si es `false`, `BookingKeyGuard` y el guard de ámbito dejan pasar con la propiedad demo | `auth/booking-key.guard.ts:46-47,93`; `auth/booking-engine-scope.guard.ts:38` |
+| `VITE_HAIP_BOOKING_REQUESTS` | Muestra en el dashboard `/booking-requests` | `apps/dashboard/src/App.tsx:46`, `components/layout/Sidebar.tsx:99`, `lib/bookingRequestsFeature.ts:2` |
+
+**Configuración por propiedad.** Tabla `booking_engine_config` (en singular; el plan la menciona como
+`booking_engine_configs`): `is_enabled` default `false`
+(`packages/database/src/schema/booking-engine.ts:90,93`). Con `is_enabled=false` el servicio responde
+403 `Direct booking is not enabled for this property` en búsqueda (`booking-engine.service.ts:63-65`),
+servicios vendibles (112-114) y reserva (403-405). `getConfig` **crea una fila con defaults en el primer
+acceso** (`booking-engine-config.service.ts:143-157`), también desde rutas públicas. **Datos demo:**
+`seed.ts` inserta la configuración con `isEnabled: true` (`packages/database/src/seed.ts:1248-1250`).
+
+**RBAC y dashboard.** Permiso `bookingengine.manage` (`permissions-catalog.ts:63`, sin entrada de menú;
+solo `admin` y `general_manager` lo tienen por defecto). Dashboard: pestaña Settings → Booking Engine
+(`apps/dashboard/src/pages/Settings.tsx:20,62`, `components/admin/BookingEngineSettings.tsx`);
+`/booking-requests/*` detrás de `isBookingRequestsUiEnabled()` (`App.tsx:46-47`; `Sidebar.tsx:53,99`).
+Las rutas públicas del motor y el retorno de pago **no** pasan por RBAC.
+
+### 7.6 Agentes de revenue (`AgentModule`)
+
+**Archivos y módulos Nest.** `apps/api/src/modules/agent/` (`agent.module.ts`, `agent.controller.ts`,
+`agent.service.ts`, `agent-autopilot-tiers.ts`, `agent-graph.ts`, una carpeta por agente). Registro:
+cada agente se auto-registra en el constructor con `agentService.registerAgent(this)`
+(`agent.service.ts:96-97`).
+
+**Agentes implementados (12 clases, `agent.module.ts:25-41`).** `demand_forecast`, `pricing`,
+`channel_mix`, `overbooking`, `night_audit`, `housekeeping`, `cancellation`, `guest_comms`,
+`review_response`, `ar_collections`, `group_pickup`, `revenue_manager`. El enum `agent_type` tiene 13
+valores (`packages/database/src/schema/agent.ts:4-18`); **`deposit_risk` no tiene clase**: pedirlo
+devuelve `Agent 'deposit_risk' is not implemented yet` (`agent.service.ts:694-701`).
+
+**Clasificación por riesgo que ya define HAIP** (`agent-autopilot-tiers.ts:7-17`): `money` =
+`pricing`, `overbooking`, `channel_mix`, `revenue_manager`, `group_pickup`; `guest` = `guest_comms`,
+`review_response`; todo lo demás es `ops`. Es un dato del código, **no** una decisión sobre cuáles son
+"de revenue" (ver 7.9). Observación: `execute()` de `pricing` y de `channel_mix` no escribe tarifas ni
+llama al channel manager en esta versión (`pricing/pricing.agent.ts:187-204`, comentario "log the
+intended changes"; `channel-mix/channel-mix.agent.ts:173-179`).
+
+**Dependencias salientes.** `AgentModule` importa `WebhookModule`, `LlmModule`, `EmailModule`
+(`agent.module.ts:23`). Exporta `AgentService` y `DemandForecastAgent` (línea 42).
+
+**Dependencias entrantes.** Verificado con `grep`: solo `app.module.ts:29,91` importa `AgentModule`;
+ningún otro módulo usa `AgentService` ni los agentes. Fuera de `agent/` solo se importan archivos de
+`agent/guest-comms/email.*` (siguiente tabla).
+
+**Listeners de eventos.**
+
+| Listener | Módulo que lo registra | Eventos | Archivo:línea |
+|----------|------------------------|---------|---------------|
+| `GuestCommsListener` | `AgentModule` (`agent.module.ts:14,35`) | `reservation.created`, `reservation.checked_in`, `reservation.checked_out` -> `runAgent(..., 'guest_comms')` | `agent/guest-comms/guest-comms.listener.ts:22,27,32,40` |
+| `ReviewIngestListener` | `AgentModule` (`agent.module.ts:16,37`) | `guest.review.ingested` -> `runAgent(..., 'review_response')` | `agent/review-response/review-ingest.listener.ts:17-23` |
+| `StaffNotificationListener` | **`StaffNotificationsModule`, no `AgentModule`** (`staff-notifications.module.ts:11`) | `agent.decision_created`, además `WEBHOOK_DELIVERY_FAILED` y `audit.completed` | `staff-notifications/staff-notification.listener.ts:19,52,79` |
+
+Correspondencia importante: ambos listeners del `AgentModule` pasan por `AgentService.runAgent`, que
+devuelve `{ skipped: true }` si `agent_configs.is_enabled` es falso (`agent.service.ts:104-110`).
+Antes de esa comprobación, `getOrCreateConfig` **inserta una fila deshabilitada** (default
+`isEnabled: false`, `mode: 'suggest'`) si no existe (`agent.service.ts:329-355`); la inserción ocurre una sola
+vez por pareja propiedad-agente y solo para los agentes que disparan los listeners (la fila de `guest_comms`
+la crea el primer evento de reserva y la de `review_response` la primera reseña ingerida); después queda
+una lectura por evento.
+
+**Crons y colas.** Ninguno interno: "HAIP does not run in-process agent cron"
+(`docs/operations/cron.md:36`). Planificación externa: `scripts/cron/agent-runs.sh <agentType>` hace
+`POST agents/<propertyId>/<agentType>/run?triggeredBy=schedule` (`scripts/cron/agent-runs.sh:9-23`;
+ejemplos activos en `scripts/cron/crontab.example:26-27`). La matriz por defecto es
+`revenue_manager`, `ar_collections`, `housekeeping`, `cancellation`, `night_audit`, `guest_comms`, más
+ingesta horaria de reseñas (`docs/operations/cron.md:49-55`); `demand_forecast`, `pricing`,
+`overbooking`, `channel_mix` y `group_pickup` se ejecutan solo a través de `revenue_manager`
+(`docs/operations/cron.md:59`; `agent/revenue-manager/revenue-manager.agent.ts:51,65`). El
+entrenamiento nocturno `POST agents/:propertyId/train-all` solo toca agentes con `is_enabled=true`
+(`agent.service.ts:512-516`). Nota de deriva documental: `cron.md` dice "Role: admin" para ejecutar
+agentes, pero el controlador exige `revenue.manage` (`agent.controller.ts:27`).
+
+**Flags y variables de entorno.** `HAIP_AI_ENABLED` se lee solo en `LlmService` (`llm/llm.service.ts:43`),
+que usan `AgentService` (`agent.service.ts:6,32`) y `HelpService` (`help/help.service.ts:2,8`).
+**No apaga los agentes**: los agentes heurísticos corren igual; solo se desactiva la explicación con
+modelo de lenguaje. `AUTH_ENABLED=false` concede todos los permisos (`auth/permissions.guard.ts:33-35`).
+
+**Configuración por propiedad.** `agent_configs` (`packages/database/src/schema/agent.ts:38`):
+`is_enabled` default `false` (línea 44), `mode` default `suggest` (línea 45; valores `manual`,
+`suggest`, `autopilot`, líneas 20-24). **Datos demo:** `seed.ts` habilita 12 agentes en modo `suggest`
+para la propiedad demo (`packages/database/src/seed.ts:1022-1040`).
+
+**RBAC y dashboard.** `AgentController` tiene permiso de clase `revenue.manage`
+(`agent.controller.ts:27`); sus rutas de reseñas (`POST|GET|PATCH :propertyId/reviews`) usan
+`reviews.manage` a nivel de método (`agent.controller.ts:172-174,213-217,234-236`). Como el guard usa
+`getAllAndOverride([handler, class])` (`permissions.guard.ts:37-40`), el permiso del método reemplaza
+al de la clase (inferido del código; no ejecutado). Dashboard: `/revenue/*` (`App.tsx:18,61`,
+`Sidebar.tsx:75`), `/communications` y `/reviews` (`App.tsx:66-67`, `Sidebar.tsx:80-81`).
+`revenue.manage` está en `permissions-catalog.ts:56` y lo tienen `admin`, `general_manager` y
+`revenue_manager` (línea 170).
+
+### 7.7 Acoplamientos detectados por el arquitecto, verificados en código
+
+| # | Afirmación del plan (4.4) | Veredicto | Evidencia |
+|---|---------------------------|-----------|-----------|
+| 1 | `EmailModule`/`EmailService` viven en `agent/guest-comms/` y los importan `ReservationModule`, `GuestCheckInModule` y el bootstrap de booking-requests | **Correcto**, e incompleto: también `AgentModule` | `reservation.module.ts:9,32`; `guest-check-in.module.ts:7,21`; `booking-requests.bootstrap.ts:23-24,47-48,67,83`; `agent.module.ts:20,23`. Además dos servicios importan el archivo por ruta: `reservation/reservation-messaging.service.ts:12`, `guest-check-in/guest-check-in.service.ts:25` |
+| 2 | "Quitar `AgentModule` de `AppModule` es posible; borrar la carpeta `agent/` rompe reservas y check-in" | **Correcto**, con matiz: quitar `AgentModule` no afecta a `EmailModule` porque `ReservationModule` y `GuestCheckInModule` lo importan por su cuenta | mismos archivos del punto 1; ningún otro importador de `AgentModule` |
+| 3 | `GuestCommsListener` dentro de `AgentModule` | **Correcto** | `agent.module.ts:14,35`; `guest-comms.listener.ts:22,27,32` |
+| 4 | `ReviewIngestListener` (`guest.review.ingested`) del `AgentModule` | **Correcto** | `agent.module.ts:16,37`; `review-ingest.listener.ts:17` |
+| 5 | `StaffNotificationListener` es un listener "del `AgentModule`" | **Incorrecto**: lo registra `StaffNotificationsModule`. Escucha `agent.decision_created`, pero también `WEBHOOK_DELIVERY_FAILED` y `audit.completed` | `staff-notifications.module.ts:11`; `staff-notification.listener.ts:19,52,79` |
+| 6 | `AriService` escucha eventos de reserva y tarifa | **Correcto** (eventos exactos en 7.4) | `channel/ari.service.ts:356,372,393,412-415` |
+| 7 | `ContentSyncService` escucha `property.content_updated` y `roomtype.content_updated` | **Correcto** | `channel/content-sync.service.ts:132-133` |
+| 8 | Ningún otro módulo importa `ChannelModule` | **Correcto** | `grep` sobre `apps/api/src`: solo `app.module.ts:24,86`; el resto son pruebas o falsos positivos (7.4) |
+| 9 | Cron externo `scripts/cron/agent-runs.sh` | **Correcto**; no hay planificación interna | `scripts/cron/agent-runs.sh:9-23`; `docs/operations/cron.md:36` |
+| 10 | `HAIP_AI_ENABLED` (LLM, opt-in) | **Correcto**, pero **no es una palanca para apagar agentes** | `llm/llm.service.ts:43`; los agentes corren sin él |
+| 11 | `booking_engine_configs.is_enabled` default `false`; 403 si apagado | **Correcto**; el nombre real es `booking_engine_config` (singular) | `schema/booking-engine.ts:90,93`; `booking-engine.service.ts:63-65,112-114,403-405` |
+| 12 | "`SERVE_BOOKING` sin definir" apaga el widget (estrategia A) | **Insuficiente**: con `NODE_ENV=production` se sirve siempre, y el compose lo fija en `true` | `app.module.ts:136`; `docker-compose.yml:105` |
+| 13 | "Defaults apagados" como base de la estrategia A | **Condicionado**: `seed.ts` deja encendidos conexiones de canal activas, 12 agentes y el motor de reservas para la propiedad demo; el servicio `init` del compose ejecuta el seed | `seed.ts:728-777,1022-1040,1248-1250`; `docker-compose.yml:82` |
+| 14 | `ConnectModule` requerido por el booking engine | **Correcto**; además `PaymentModule` lo usa de forma opcional y silenciosa | `booking-engine.module.ts:24`; `payment/stripe-webhook.controller.ts:147-162` |
+| 15 | 48 módulos en `AppModule` | **Correcto** | 7.1 |
+
+### 7.8 Grafo de dependencias (solo los tres bloques y sus vecinos)
+
+```mermaid
+graph LR
+  App[AppModule] --> Channel[ChannelModule]
+  App --> BE[BookingEngineModule]
+  App --> Connect[ConnectModule]
+  App --> Agent[AgentModule]
+  App --> Res[ReservationModule]
+  App --> CheckIn[GuestCheckInModule]
+  App --> Staff[StaffNotificationsModule]
+  App -. "HAIP_BOOKING_REQUESTS=true" .-> BR[BookingRequestModule]
+
+  Channel --> Res
+  Channel --> Media[MediaModule]
+  Channel --> Reviews[ReviewsModule]
+  Channel --> WH[WebhookModule]
+
+  BE --> Connect
+  BE --> Res
+  BE --> Pay[PaymentModule]
+  BE --> Folio[FolioModule]
+  BE --> Rate[RatePlanModule]
+  BR --> BE
+  BR --> Email
+  Pay -. "token CONNECT_CHECKOUT_STRIPE_HANDLER, opcional" .-> Connect
+
+  Agent --> LLM[LlmModule]
+  Agent --> WH
+  Agent --> Email["EmailModule (agent/guest-comms)"]
+  Res --> Email
+  CheckIn --> Email
+
+  Ari["AriService en Channel"] -. "escucha reservation.*, rate_plan.*, rate_restriction.*" .-> Res
+  GCL["GuestCommsListener en Agent"] -. "escucha reservation.created/checked_in/checked_out" .-> Res
+  RIL["ReviewIngestListener en Agent"] -. "escucha guest.review.ingested" .-> Reviews
+  Staff -. "escucha agent.decision_created" .-> Agent
+```
+
+Las líneas punteadas son acoplamiento por eventos o resolución opcional, no por `imports`. Los nodos
+omitidos (`TaxModule`, `GuestModule`, `AccountingModule`, `AncillaryModule`, `PolicyModule`, `AuthModule`)
+están en las listas de 7.5.
+
+### 7.9 Estrategias para deshabilitar (documentadas, **no aplicadas**)
+
+Niveles de la sección 4.5 del plan. Ninguna está aplicada en este repositorio.
+
+| Estrategia | Channel manager | Booking engine | Agentes de revenue | Impacto | Riesgo y verificaciones | Toca núcleo | Reversible |
+|------------|-----------------|----------------|--------------------|---------|-------------------------|-------------|------------|
+| **A. Configuración por propiedad / entorno** | No crear `channel_connections` o dejarlas distintas de `status='active'` con `is_active=true`; no levantar perfil `channels` | `booking_engine_config.is_enabled=false` (default); no definir `SERVE_BOOKING`; `HAIP_BOOKING_REQUESTS` sin definir | `agent_configs.is_enabled=false` (default); no programar `agent-runs.sh`; no llamar `train-all` | Las rutas y listeners siguen cargados pero no actúan: el motor responde 403, los agentes devuelven `skipped`, los listeners de canal no hacen llamadas externas | (1) El seed deja todo encendido para la propiedad demo (7.7 #13): no ejecutar el seed ni apagar a mano. (2) `NODE_ENV=production` sirve el widget aunque no se defina `SERVE_BOOKING`. (3) `HAIP_AI_ENABLED` no apaga agentes. (4) Los receptores entrantes de canal siguen públicos. (5) Quedan lecturas residuales por evento (consulta de conexiones, de `agent_configs` y de suscripciones de `connect`) y una única inserción por pareja propiedad-agente en `agent_configs` para `guest_comms` y `review_response`. (6) Con `AUTH_ENABLED=false` A y B quedan anuladas (ver recomendación) | No | Sí, inmediata |
+| **B. RBAC** | No otorgar `channels.manage` | No otorgar `bookingengine.manage` | No otorgar `revenue.manage` (y `reviews.manage` para las rutas de reseñas del agente) | Oculta menús y bloquea endpoints autenticados de gestión | (1) Los roles de sistema son de solo lectura (`admin/roles.service.ts:19,62`) y traen estos permisos: `admin: ALL_PERMISSIONS` (`permissions-catalog.ts:84`), `general_manager` casi todos, `revenue_manager` incluye `revenue.manage` y `channels.manage` (`permissions-catalog.ts:158-171`); hay que asignar solo roles propios (RBAC-001). (2) `AUTH_ENABLED=false` concede todo (`permissions.guard.ts:33-35`). (3) No cubre rutas `@Public()` (receptores entrantes, motor de reservas, retorno de pago), ni `connect` (API key), ni los listeners, ni el cron externo. (4) `IcalController` usa `@Roles`, no permisos. (5) El permiso de método reemplaza al de clase en `AgentController` | No (usa el catálogo existente) | Sí |
+| **C. Sacar de `AppModule`** | Quitar `ChannelModule` (`app.module.ts:24,86`): nadie más lo importa | Quitar `BookingEngineModule` (y `ConnectModule` si no se quiere): exige `HAIP_BOOKING_REQUESTS` apagado; el paquete lo importa | Quitar `AgentModule` (`app.module.ts:29,91`): `EmailModule` ya lo importan `ReservationModule` y `GuestCheckInModule` | Desaparecen controladores, listeners y rutas; el dashboard seguiría mostrando las pantallas (comportamiento sin API no verificado) | (1) Si `ConnectModule` deja de cargarse (requiere quitar también `BookingEngineModule` y no activar `HAIP_BOOKING_REQUESTS`), el webhook de Stripe ignora `checkout.session.completed` sin error ni log (7.5). (2) Quitar `AgentModule` elimina también `AgentController` y con él las rutas `agents/:propertyId/reviews` (uso por el dashboard **no verificado**), las notificaciones al personal por `agent.decision_created` y `GuestCommsListener`, que no es de revenue (depende de Q-012). (3) Borrar la carpeta `agent/` rompería reservas y check-in (7.7 #1). (4) Requiere un patrón de importación condicional como `bookingRequestsModules()` (`app.module.ts:79`); **no existe hoy** | Sí (conflicto con upstream) | Sí |
+| **D. Eliminación de código** | Borrar `channel/` | Borrar `booking-engine/` | Borrar `agent/` | Descartada en el plan | Rompe merges con upstream y dependencias (7.7 #1, #14) | Sí | No |
+
+**Recomendación técnica del plan (registrada, no decidida aquí).** A + B para el MVP; C solo con
+decisión explícita y como historia futura que debe crear el orquestador. Con las verificaciones de
+esta sección, A + B es viable sin tocar código **a condición de**: (a) no ejecutar el seed de demostración
+en entornos reales (o apagar sus filas), (b) usar solo roles propios sin `channels.manage`,
+`revenue.manage` ni `bookingengine.manage`, (c) no programar `agent-runs.sh` ni `train-all`, (d) tener
+en cuenta que siguen montados los receptores inbound de canal (`@Public()`), las rutas públicas del motor,
+`connect` (API con API key, siempre montada) y `booking-return` (`@Public()`, no comprueba `is_enabled`), y
+(e) `AUTH_ENABLED=true` (regla 6 de `docs/project/ORQUESTACION.md`).
+
+Con `AUTH_ENABLED=false`, A y B quedan anuladas: el guard de permisos concede todo
+(`auth/permissions.guard.ts:33-35`), `BookingKeyGuard` (`auth/booking-key.guard.ts:93`) y el guard de ámbito
+(`auth/booking-engine-scope.guard.ts:38`) dejan pasar, y el receptor inbound de Booking.com omite el Basic
+Auth (`booking-com-inbound.controller.ts:59`). El servicio `api` de `docker-compose.yml` fija
+`AUTH_ENABLED: 'false'` y `NODE_ENV: development` (`docker-compose.yml:101,112`); no debe usarse como base de
+un entorno real.
+
+### 7.10 Qué depende de Q-012 y qué no se verificó
+
+- **Q-012 (abierta, no bloquea BASE-001):** (a) qué otros módulos se deshabilitan (candidatos listados en la propia Q-012, `docs/project/open-questions.md`);
+  (b) qué agentes son "de revenue"; (c) si el apagado de channel manager y booking engine es temporal (MVP) o definitivo.
+  Este documento **no decide** ninguno. Dato de apoyo para (b): la clasificación `money` del código
+  (`agent-autopilot-tiers.ts:7-13`) y la regla de que las palancas corren vía `revenue_manager`
+  (`docs/operations/cron.md:59`); la frontera final (incluir `demand_forecast` y `cancellation`) es de
+  Danilo. Para (c): A, B y C son reversibles; C toca el núcleo y solo procede si Q-012 lo pide.
+- **No verificado:** mecanismo
+  de autenticación del receptor DerbySoft; uso real de las rutas `agents/:propertyId/reviews` por el dashboard;
+  `agent-graph.ts` y las dependencias entre agentes más allá de `revenue_manager`; comportamiento en tiempo de
+  ejecución de los listeners (no se arrancó la API ni se emitieron eventos); permiso con que se muestra la
+  pestaña Settings -> Booking Engine; propósito de `tools/haip-connect-gpt` y `tools/repo-control`.
